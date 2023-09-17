@@ -39,7 +39,7 @@ message(STATUS "This is xfemm version ${XFEMM_VERSION_STRING}...")
 
 
 enable_testing()
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 set(GCC_COVERAGE_COMPILE_FLAGS)
 set(GCC_WARNING_FLAGS "-Wall -Wextra -Wpedantic")
