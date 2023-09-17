@@ -18,65 +18,51 @@
    By: Richard Crozier
    Contact: richard.crozier@yahoo.co.uk
 */
-
+#include <numeric>
+#include <iostream>
+#include <vector>
+#include <algorithm>
 #ifndef SPARS_H
 #define SPARS_H
 
-class CEntry
+struct CEntry
 {
 public:
-
-    double x;				// value stored in the entry
-    int c;					// column that the entry lives in
-    CEntry *next;			// pointer to next entry in row;
-    CEntry();
-
-private:
+    int c;
+    double x;
 };
-
 
 class CBigLinProb
 {
 public:
 
-    // data members
-
-    double *V;				// solution
-    double *P;				// search direction;
-    double *R;				// residual;
-    double *U;				// A * P;
-    double *Z;
-    double *b;				// RHS of linear equation
-    CEntry **M;				// pointer to list of matrix entries;
-    int n;					// dimensions of the matrix;
+    std::vector<double> V;				// solution
+    std::vector<double> P;				// search direction;
+    std::vector<double> R;				// residual;
+    std::vector<double> U;				// A * P;
+    std::vector<double> Z;
+    std::vector<double> b;				// RHS of linear equation
+    std::vector<std::vector<CEntry>> M;				// pointer to list of matrix entries;
+    int n = 0;					// dimensions of the matrix;
     int bdw;				// Optional matrix bandwidth parameter;
     double Precision;		// error tolerance for solution
-    double Lambda;			// relaxation factor;
+    const double Lambda = 1.5;			// relaxation factor;
 
     int *Q; ///< Used by esolver and hsolver.
 
-    // member functions
-
-    // constructor
-    CBigLinProb();
-    // destructor
-    ~CBigLinProb();
-    virtual int Create(int d, int bw);	// initialize the problem
+    int Create(int d, int bw);
     void Put(double v, int p, int q);
-    // use to create/set entries in the matrix
     double Get(int p, int q);
-    bool PCGSolve(int flag);	// flag==true if guess for V present;
-    void MultPC(const double *X, double *Y);
-    void AddTo(double v, int p, int q);
-    void MultA(double *X, double *Y);
-    void SetValue(int i, double x);
+	void AddTo(double v, int p, int q);
+	void SetValue(int i, double x);
     void Periodicity(int i, int j);
     void AntiPeriodicity(int i, int j);
     void Wipe();
-    double Dot(double *X, double *Y);
-    void ComputeBandwidth();
+	
+    bool PCGSolve(int flag);
+    void MultPC(const std::vector<double>& X, std::vector<double>& Y);
+    void MultA(const std::vector<double>& X, std::vector<double>& Y);
 
-//		CFknDlg *TheView;
 
 private:
 

@@ -988,18 +988,7 @@ int FSolver::Static2D(CBigLinProb &L)
                 }
             }
 
-
-            // report some results
-            char outstr[256];
-            sprintf(outstr,"Newton Iteration(%i) Relax=%.4g\n",Iter,Relax);
-            PrintMessage(outstr);
-//        TheView->SetDlgItemText(IDC_FRAME2,outstr);
-            j = (int)  (100.*log10(res)/(log10(Precision)+2.));
-            if (j>100)
-            {
-                j = 100;
-            }
-//        TheView->m_prog2.SetPos(j);
+            std::cout << "Iteration - " << Iter << " Relax - " << Relax << "\n";
         }
 
         // nonlinear iteration has to have a looser tolerance

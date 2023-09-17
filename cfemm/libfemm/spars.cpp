@@ -27,134 +27,53 @@
 #include <cstdlib>
 #include <utility>
 
-using std::swap;
-
 #define KLUDGE
 
+int CBigLinProb::Create(int d, int bw) {
 
-CEntry::CEntry()
-{
-    next=NULL;
-    x=0;
-    c=0;
-}
+    bdw = bw;
+    b.resize(d);
+    V.resize(d);
+    P.resize(d);
+    R.resize(d);
+    U.resize(d);
+    Z.resize(d);
+    M.resize(d);
 
-CBigLinProb::CBigLinProb()
-{
-    n=0;
-    // Best guess for relaxation parameter
-    Lambda = 1.5;
-}
-
-CBigLinProb::~CBigLinProb()
-{
-    if (n==0) return;
-
-    int i;
-    CEntry *uo,*ui;
-
-    free(b);
-    free(P);
-    free(R);
-    free(V);
-    free(U);
-    free(Z);
-
-    for(i=0; i<n; i++)
-    {
-        ui=M[i];
-        do
-        {
-            uo=ui;
-            ui=uo->next;
-            delete uo;
-        }
-        while(ui!=NULL);
-    }
-
-    free(M);
-    free(Q);
-    n = 0;
-}
-
-int CBigLinProb::Create(int d, int bw)
-{
-    int i;
-
-    bdw=bw;
-    b=(double *)calloc(d,sizeof(double));
-    V=(double *)calloc(d,sizeof(double));
-    P=(double *)calloc(d,sizeof(double));
-    R=(double *)calloc(d,sizeof(double));
-    U=(double *)calloc(d,sizeof(double));
-    Z=(double *)calloc(d,sizeof(double));
-
-    M=(CEntry **)calloc(d,sizeof(CEntry *));
-    n=d;
-
-    for(i=0; i<d; i++)
-    {
-        M[i] = new CEntry;
-        M[i]->c = i;
-    }
-    Q = (int *)  calloc(d,sizeof(int));
+    n = d;
 
     return 1;
 }
 
-void CBigLinProb::Put(double v, int p, int q)
-{
-    CEntry *e,*l = NULL;
+void CBigLinProb::Put(double v, int p, int q) {
+    if (q < p)
+        std::swap(p, q);
 
-    if (q<p)
-        swap(p,q);
+    std::vector<CEntry>& entryList = M[p];
 
-    e = M[p];
+    auto it = std::lower_bound(entryList.begin(), entryList.end(), q,
+        [](const CEntry& entry, int qVal) { return entry.c < qVal; });
 
-    while ((e->c < q) && (e->next != NULL))
-    {
-        l = e;
-        e = e->next;
+    if (it != entryList.end() && it->c == q) {
+        it->x = v;
     }
-
-    if (e->c == q)
-    {
-        e->x = v;
-        return;
+    else {
+        CEntry newEntry{ q, v };
+        entryList.insert(it, newEntry);
     }
-
-    CEntry *m = new CEntry;
-
-    if ((e->next == NULL) && (q > e->c))
-    {
-        e->next = m;
-        m->c = q;
-        m->x = v;
-    }
-    else
-    {
-        l->next = m;
-        m->next = e;
-        m->c = q;
-        m->x = v;
-    }
-    return;
 }
 
-double CBigLinProb::Get(int p, int q)
-{
+double CBigLinProb::Get(int p, int q) {
     if (q < p)
-    {
-        swap(p,q);
-    }
+        std::swap(p, q);
 
-    CEntry *e = M[p];
-    while ((e->c < q) && (e->next != NULL))
-    {
-        e = e->next;
-    }
+    const std::vector<CEntry>& entryList = M[p];
 
-    if (e->c == q) return e->x;
+    auto it = std::lower_bound(entryList.begin(), entryList.end(), q,
+        [](const CEntry& entry, int qVal) { return entry.c < qVal; });
+
+    if (it != entryList.end() && it->c == q)
+        return it->x;
 
     return 0;
 }
@@ -164,153 +83,104 @@ void CBigLinProb::AddTo(double v, int p, int q)
 	Put(Get(p,q)+v,p,q);
 }
 
-void CBigLinProb::MultA(double *X, double *Y)
+void CBigLinProb::MultA(const std::vector<double>& X, std::vector<double>& Y)
 {
-    int i;
-    CEntry *e;
+    for (int i = 0; i < n; i++) {
+        Y[i] = 0.0;
+    }
 
-    for(i=0; i<n; i++) Y[i]=0;
+    std::fill(Y.begin(), Y.end(), 0.0);
 
-    for(i=0; i<n; i++)
-    {
-        Y[i]+=M[i]->x*X[i];
-        e=M[i]->next;
-        while(e!=NULL)
-        {
-            Y[i]+=e->x*X[e->c];
-            Y[e->c]+=e->x*X[i];
-            e=e->next;
+    for (int i = 0; i < n; i++) {
+        Y[i] += M[i][0].x * X[i];
+
+        for (size_t j = 1; j < M[i].size(); j++) {
+            const CEntry& entry = M[i][j];
+            Y[i] += entry.x * X[entry.c];
+            Y[entry.c] += entry.x * X[i];
         }
     }
 }
 
-double CBigLinProb::Dot(double *X, double *Y)
+void CBigLinProb::MultPC(const std::vector<double>& X, std::vector<double>& Y)
 {
-    int i;
-    double z;
+    double c = Lambda * (2.0 - Lambda);
+    for (int i = 0; i < n; i++) {
+        Y[i] = X[i] * c;
+    }
 
-    for(i=0,z=0; i<n; i++) z+=X[i]*Y[i];
+    for (int i = 0; i < n; i++) {
+        Y[i] /= M[i][0].x;
 
-    return z;
-}
-
-void CBigLinProb::MultPC(const double *X, double *Y)
-{
-    // Jacobi preconditioner:
-    //	int i;
-    // for(i=0;i<n;i++) Y[i]=X[i]/M[i]->x;
-
-    // SSOR preconditioner:
-    int i;
-    double c;
-    CEntry *e;
-
-    c= Lambda*(2.-Lambda);
-    for(i=0; i<n; i++) Y[i]=X[i]*c;
-
-    // invert Lower Triangle;
-    for(i=0; i<n; i++)
-    {
-        Y[i]/= M[i]->x;
-        e=M[i]->next;
-        while(e!=NULL)
-        {
-            Y[e->c] -= e->x * Y[i] * Lambda;
-            e=e->next;
+        for (size_t j = 1; j < M[i].size(); j++) {
+            const CEntry& entry = M[i][j];
+            Y[entry.c] -= entry.x * Y[i] * Lambda;
         }
     }
 
-    for(i=0; i<n; i++) Y[i]*=M[i]->x;
+    for (int i = 0; i < n; i++) {
+        Y[i] *= M[i][0].x;
+    }
 
-    // invert Upper Triangle
-    for(i=n-1; i>=0; i--)
-    {
-        e=M[i]->next;
-        while(e!=NULL)
-        {
-            Y[i] -= e->x * Y[e->c] * Lambda;
-            e=e->next;
+    for (int i = n - 1; i >= 0; i--) {
+        for (size_t j = 1; j < M[i].size(); j++) {
+            const CEntry& entry = M[i][j];
+            Y[i] -= entry.x * Y[entry.c] * Lambda;
         }
-        Y[i]/= M[i]->x;
+        Y[i] /= M[i][0].x;
     }
 }
 
 bool CBigLinProb::PCGSolve(int flag)
 {
-    int i;
-    double res,res_o,res_new;
-    double er,del,rho,pAp;
+    double res, res_o, res_new;
+    double del, rho, pAp;
+    double PrecisionSq = Precision * Precision;
 
-    // quick check for most obvious sign of singularity;
-    for(i=0; i<n; i++) if(M[i]->x==0)
+    for (int i = 0; i < n; i++)
+    {
+        if (M[i].front().x == 0)
         {
-            fprintf(stderr,"singular flag tripped at %i of %i\n", i,n);
-            return 0;
+            fprintf(stderr, "singular flag tripped at %i of %i\n", i, n);
+            return false;
         }
+    }
 
-    // initialize progress bar;
-//	TheView->SetDlgItemText(IDC_FRAME1,"Conjugate Gradient Solver");
-//	TheView->m_prog1.SetPos(0);
-    printf("Conjugate Gradient Solver\n");
+    MultPC(b, Z);
 
-    // residual with V=0
-    MultPC(b,Z);
-    res_o=Dot(Z,b);
-    if(res_o==0) return true;
+    res_o = std::transform_reduce(Z.begin(), Z.end(), b.begin(), 0.0);
 
-    // if flag is false, initialize V with zeros;
-    if (flag==0) for(i=0; i<n; i++) V[i]=0;
+    if (res_o == 0) return true;
 
-    // form residual;
-    MultA(V,R);
-    for(i=0; i<n; i++) R[i]=b[i]-R[i];
+    MultA(V, R);
 
-    // form initial search direction;
-    MultPC(R,Z);
-    for(i=0; i<n; i++) P[i]=Z[i];
-    res=Dot(Z,R);
+    std::transform(b.begin(), b.end(), R.begin(), R.begin(), std::minus<double>());
 
-    // do iteration;
+    MultPC(R, Z);
+
+    std::copy(Z.begin(), Z.end(), P.begin());
+
+    res = std::transform_reduce(Z.begin(), Z.end(), R.begin(), 0.0);
+
     do
     {
-        // step i)
-        MultA(P,U);
-        pAp=Dot(P,U);
-        del=res/pAp;
+        MultA(P, U);
+        pAp = std::transform_reduce(P.begin(), P.end(), U.begin(), 0.0);
+        del = res / pAp;
 
-        for(i=0; i<n; i++)
-        {
-            // step ii)
-            V[i]+=(del*P[i]);
+        std::transform(V.begin(), V.end(), P.begin(), V.begin(), [del](double v, double p) { return v + del * p; });
+        std::transform(R.begin(), R.end(), U.begin(), R.begin(), [del](double r, double u) { return r - del * u; });
 
-            // step iii)
-            R[i]-=(del*U[i]);
-        }
+        MultPC(R, Z);
 
-        // step iv)
-        MultPC(R,Z);
-        res_new=Dot(Z,R);
-        rho=res_new/res;
-        res=res_new;
+        res_new = std::transform_reduce(Z.begin(), Z.end(), R.begin(), 0.0);
 
-        // step v)
-        for(i=0; i<n; i++) P[i]=Z[i]+(rho*P[i]);
+        rho = res_new / res;
+        res = res_new;
 
-        // have we converged yet?
-        er=sqrt(res/res_o);
-//        prg2=(int) (20.*log10(er)/(log10(Precision)));
-//        if(prg2>prg1)
-//        {
-//            prg1=prg2;
-//            prg2=(prg1*5);
-//            if(prg2>100) prg2=100;
-//			TheView->m_prog1.SetPos(prg2);
-//			TheView->InvalidateRect(NULL, FALSE);
-//			TheView->UpdateWindow();
-//        }
+        std::transform(Z.begin(), Z.end(), P.begin(), P.begin(), [rho](double z, double p) { return z + rho * p; });
 
-    }
-    while(er>Precision);
+    } while (res / res_o > PrecisionSq);
 
     return true;
 }
@@ -345,21 +215,10 @@ void CBigLinProb::SetValue(int i, double x)
     b[i]=Get(i,i)*x;
 }
 
-void CBigLinProb::Wipe()
-{
-    int i;
-    CEntry *e;
-
-    for(i=0; i<n; i++)
-    {
-        b[i]=0.;
-        e=M[i];
-        do
-        {
-            e->x=0;
-            e=e->next;
-        }
-        while(e!=NULL);
+void CBigLinProb::Wipe() {
+    for (int i = 0; i < n; i++) {
+        b[i] = 0.0;
+        M[i].clear();
     }
 }
 
@@ -374,7 +233,7 @@ void CBigLinProb::AntiPeriodicity(int i, int j)
 #endif
 
     if (j<i)
-        swap(j,i);
+        std::swap(j,i);
 
     if(bdw==0)
     {
@@ -429,7 +288,7 @@ void CBigLinProb::Periodicity(int i, int j)
 #endif
 
     if (j<i)
-        swap(j,i);
+        std::swap(j,i);
 
     if(bdw==0)
     {
@@ -471,25 +330,4 @@ void CBigLinProb::Periodicity(int i, int j)
 #ifdef KLUDGE
     bdw=tmpbdw;
 #endif
-}
-
-
-// a diagnostic routine to check whether that the bandwidth of the
-// constructed matrix is actually consistent with a priori bandwidth.
-void CBigLinProb::ComputeBandwidth()
-{
-    CEntry *e;
-    int k,bw,maxbw;
-
-    for(maxbw=0,k=0; k<n; k++)
-    {
-        e=M[k];
-        while(e->next != NULL) e=e->next;
-        bw=e->c - k;
-        if (bw>maxbw) maxbw=bw;
-    }
-
-//	MsgBox("Assumed Bandwidth = %i\nActual Bandwidth = %i",bdw,maxbw);
-
-    printf("Assumed Bandwidth = %i\nActual Bandwidth = %i", bdw, maxbw);
 }
